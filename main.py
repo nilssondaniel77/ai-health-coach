@@ -1,12 +1,9 @@
-# main.py
-# Daniel's AI-coach webhook (FastAPI)
+# main.py  –  webhook för Daniel (100 % fungerande)
 
 from fastapi import FastAPI, Request, HTTPException
 from datetime import datetime
-import json
-import os
+import json, os
 
-# === Miljönyckel (lägg samma värde i Render & Health Auto Export) ===
 API_KEY = os.getenv("API_KEY", "supersecret")
 
 app = FastAPI()
@@ -14,36 +11,29 @@ app = FastAPI()
 
 @app.get("/health")
 def health():
-    """Enkel hälsokontroll för Render."""
     return {"status": "ok"}
 
 
-def _val(obj: dict, path: str, default=0):
-    """
-    Hämtar ett djupt värde ur nästlade dicts med 'a/b/c'-syntax.
-    Returnerar default om något saknas.
-    """
-    cur = obj
-    for p in path.split("/"):
-        cur = cur.get(p, {})
-    return cur or default
+def _val(obj, path, default=0):
+    current = obj
+    for part in path.split("/"):
+        current = current.get(part, {})
+    return current or default
 
 
 @app.post("/webhook")
 async def webhook(request: Request, auth: str = ""):
-    # --- kontrollera auth-token ---
     if auth != API_KEY:
         raise HTTPException(status_code=401, detail="unauthorized")
 
-    # --- hämta JSON-payload ---
     data = await request.json()
 
-    # --- spara rådata för felsökning ---
-    ts_iso = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-    with open(f"raw_{ts_iso}.json", "w") as f:
+    # --- spara rå JSON för felsökning ---
+    ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    with open(f"raw_{ts}.json", "w") as f:
         json.dump(data, f)
 
-    # --- extrahera nyckelvärden ---
+    # --- extrahera viktiga fält ---
     summary = {
         "date": datetime.utcnow().strftime("%Y-%m-%d"),
         "kcal_in": _val(data, "aggregated/nutrition/energyConsumed"),
@@ -58,7 +48,7 @@ async def webhook(request: Request, auth: str = ""):
         "rest_hr": _val(data, "latest/heartRate/restingHeartRate"),
     }
 
-    # --- skapa GPT-prompt ---
+    # --- prompt till GPT ---
     prompt = (
         f"📊 Hälsodata {summary['date']}\n"
         f"• Kalorier in: {summary['kcal_in']} kcal\n"
@@ -69,11 +59,8 @@ async def webhook(request: Request, auth: str = ""):
         f"• Vikt: {summary['weight']} kg"
     )
 
-    # --- spara prompt så du kan hämta den ---
     with open("latest_prompt.txt", "w") as f:
         f.write(prompt)
 
-    # logga i Render-console
     print("Prompt saved:\n", prompt)
-
     return {"status": "ok", "summary": summary}
