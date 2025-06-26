@@ -51,4 +51,29 @@ async def webhook(request: Request, auth: str = ""):
         "fat": _val(data, "aggregated/nutrition/fatTotal"),
         "carbs": _val(data, "aggregated/nutrition/carbsTotal"),
         "water": _val(data, "aggregated/nutrition/water"),
-        "steps": _val(data, "aggrega_
+        "steps": _val(data, "aggregated/activity/steps"),
+        "active": _val(data, "aggregated/activity/activeEnergyBurned"),
+        "sleep_h": round(_val(data, "aggregated/sleep/sleepDuration_g", 0) / 3600, 2),
+        "weight": _val(data, "latest/weight/weight"),
+        "rest_hr": _val(data, "latest/heartRate/restingHeartRate"),
+    }
+
+    # --- skapa GPT-prompt ---
+    prompt = (
+        f"📊 Hälsodata {summary['date']}\n"
+        f"• Kalorier in: {summary['kcal_in']} kcal\n"
+        f"• Makro (P/F/K): {summary['protein']}/{summary['fat']}/{summary['carbs']} g\n"
+        f"• Vatten: {summary['water']} ml\n"
+        f"• Aktiv energi: {summary['active']} kcal • Steg: {summary['steps']}\n"
+        f"• Sömn: {summary['sleep_h']} h • Vilopuls: {summary['rest_hr']} bpm\n"
+        f"• Vikt: {summary['weight']} kg"
+    )
+
+    # --- spara prompt så du kan hämta den ---
+    with open("latest_prompt.txt", "w") as f:
+        f.write(prompt)
+
+    # logga i Render-console
+    print("Prompt saved:\n", prompt)
+
+    return {"status": "ok", "summary": summary}
