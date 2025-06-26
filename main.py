@@ -12,10 +12,17 @@ def health():
 
 
 def _first_metric(metrics: dict, name: str, field: str = "qty", default=0):
-    """Hämta summan av ett fält i metrics-listan."""
+    """Summerar fältet *field* i alla dataposter för vald metric."""
     block = metrics.get(name, {})
-    total = sum(item.get(field, 0) for item in block.get("data", []))
-    return total or default
+    return sum(item.get(field, 0) for item in block.get("data", [])) or default
+
+
+def _last_qty(metrics: dict, name: str, default=0):
+    """Tar senaste (högst tidstämplade) qty-värdet för metricen."""
+    block = metrics.get(name, {})
+    if not block.get("data"):
+        return default
+    return block["data"][-1].get("qty", default)
 
 
 @app.post("/webhook")
@@ -25,29 +32,37 @@ async def webhook(request: Request, auth: str = ""):
 
     data = await request.json()
 
-    # Spara rå data
+    # 1. Spara råfil för felsökning/historik
     ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     with open(f"raw_{ts}.json", "w") as f:
         json.dump(data, f)
 
-    # Bygg upp metrics-dict {name: block}
+    # 2. Gör uppslags­dict {name: block}
     metrics = {m["name"]: m for m in data.get("data", {}).get("metrics", [])}
 
-    # Summera värden
+    # 3. Plocka ut totalsiffror
     summary = {
         "date": datetime.utcnow().strftime("%Y-%m-%d"),
-        "kcal_in": _first_metric(metrics, "dietary_energy"),        # kcal
-        "protein": _first_metric(metrics, "protein"),               # g
-        "fat": _first_metric(metrics, "total_fat"),                 # g
-        "carbs": _first_metric(metrics, "carbohydrates"),           # g
-        "water": _first_metric(metrics, "water"),                   # ml
-        "steps": _first_metric(metrics, "step_count"),              # count
-        "active": round(_first_metric(metrics, "active_energy") * 0.239006, 0),  # kJ→kcal
-        "sleep_h": round(metrics.get("sleep_analysis", {}).get("data", [{}])[0].get("asleep", 0), 2),
-        "weight": _first_metric(metrics, "body_mass"),              # kg
-        "rest_hr": _first_metric(metrics, "resting_heart_rate"),    # bpm
+        "kcal_in":   _first_metric(metrics, "dietary_energy"),
+        "protein":   _first_metric(metrics, "protein"),
+        "fat":       _first_metric(metrics, "total_fat"),
+        "carbs":     _first_metric(metrics, "carbohydrates"),
+        "water":     _first_metric(metrics, "water"),
+        "weight":    _first_metric(metrics, "body_mass"),
+        "rest_hr":   _first_metric(metrics, "resting_heart_rate"),
+        "sleep_h": round(
+            metrics.get("sleep_analysis", {}).get("data", [{}])[0].get("asleep", 0), 2
+        ),
     }
 
+    # 4. Steg & aktiv energi → ta senaste ackumulerade värdet (INTE summera minut för minut)
+    summary.update({
+        "steps":  _last_qty(metrics, "step_count"),
+        # kJ → kcal (1 kJ = 0.239006 kcal)
+        "active": round(_last_qty(metrics, "active_energy") * 0.239006, 1)
+    })
+
+    # 5. Bygg prompten
     prompt = (
         f"📊 Hälsodata {summary['date']}\n"
         f"• Kalorier in: {summary['kcal_in']} kcal\n"
