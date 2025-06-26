@@ -29,25 +29,27 @@ async def webhook(request: Request, auth: str = ""):
     with open(f"raw_{ts}.json", "w") as f:
         json.dump(data, f)
 
-    summary = {
-        "date": datetime.utcnow().strftime("%Y-%m-%d"),
-        "kcal_in": _first(data, [
-            "aggregated/nutrition/energyConsumed",           # äldre namn
-            "aggregated/nutrition/dietaryEnergy"             # nya Apple-namnet
-        ]),
-        "protein": _first(data, ["aggregated/nutrition/protein"]),
-        "fat":     _first(data, ["aggregated/nutrition/fatTotal", "aggregated/nutrition/totalFat"]),
-        "carbs":   _first(data, ["aggregated/nutrition/carbsTotal", "aggregated/nutrition/carbohydrates"]),
-        "water":   _first(data, ["aggregated/nutrition/water"]),
-        "steps":   _first(data, ["aggregated/activity/steps", "aggregated/activity/stepCount"]),
-        "active":  _first(data, ["aggregated/activity/activeEnergyBurned", "aggregated/activity/activeEnergy"]),
-        "sleep_h": round(_first(data, [
-                        "aggregated/sleep/sleepDuration_g",
-                        "aggregated/sleep/sleepAnalysisSeconds"
-                    ], 0) / 3600, 2),
-        "weight":  _first(data, ["latest/weight/weight", "latest/weight/bodyMass"]),
-        "rest_hr": _first(data, ["latest/heartRate/restingHeartRate"]),
-    }
+summary = {
+    "date": datetime.utcnow().strftime("%Y-%m-%d"),
+
+    # Nutrition (kan vara 0 om Lifesum inte synkat ännu)
+    "kcal_in": _sum_qty("dietary_energy"),        # kcal
+    "protein": _sum_qty("protein"),               # g
+    "fat":     _sum_qty("total_fat"),             # g
+    "carbs":   _sum_qty("carbohydrates"),         # g
+    "water":   _sum_qty("water"),                 # ml
+
+    # Aktivitet
+    "steps":   _sum_qty("step_count"),            # count
+    "active":  round(_sum_qty("active_energy") * 0.239006, 0),  # kJ → kcal
+
+    # Sömn (tar första posten)
+    "sleep_h": round(metrics.get("sleep_analysis", {}).get("data", [{}])[0].get("asleep", 0), 2),
+
+    # Vikt & vilopuls (kommer som egna metrics om du exporterar dem)
+    "weight":  _sum_qty("body_mass"),             # kg (eller 0)
+    "rest_hr": _sum_qty("resting_heart_rate"),    # bpm (eller 0)
+}
 
     prompt = (
         f"📊 Hälsodata {summary['date']}\n"
