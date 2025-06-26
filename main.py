@@ -1,23 +1,22 @@
 from fastapi import FastAPI, Request, HTTPException
 from datetime import datetime
-import os, json
+import json, os
 
 API_KEY = os.getenv("API_KEY", "supersecret")
 app = FastAPI()
+
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-def _first(obj, paths, default=0):
-    """Testar flera 'a/b/c'-paths tills en träffar."""
-    for path in paths:
-        cur = obj
-        for part in path.split("/"):
-            cur = cur.get(part, {})
-        if cur:
-            return cur
-    return default
+
+def _first_metric(metrics: dict, name: str, field: str = "qty", default=0):
+    """Hämta summan av ett fält i metrics-listan."""
+    block = metrics.get(name, {})
+    total = sum(item.get(field, 0) for item in block.get("data", []))
+    return total or default
+
 
 @app.post("/webhook")
 async def webhook(request: Request, auth: str = ""):
@@ -25,31 +24,29 @@ async def webhook(request: Request, auth: str = ""):
         raise HTTPException(status_code=401, detail="unauthorized")
 
     data = await request.json()
+
+    # Spara rå data
     ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     with open(f"raw_{ts}.json", "w") as f:
         json.dump(data, f)
 
-summary = {
-    "date": datetime.utcnow().strftime("%Y-%m-%d"),
+    # Bygg upp metrics-dict {name: block}
+    metrics = {m["name"]: m for m in data.get("data", {}).get("metrics", [])}
 
-    # Nutrition (kan vara 0 om Lifesum inte synkat ännu)
-    "kcal_in": _sum_qty("dietary_energy"),        # kcal
-    "protein": _sum_qty("protein"),               # g
-    "fat":     _sum_qty("total_fat"),             # g
-    "carbs":   _sum_qty("carbohydrates"),         # g
-    "water":   _sum_qty("water"),                 # ml
-
-    # Aktivitet
-    "steps":   _sum_qty("step_count"),            # count
-    "active":  round(_sum_qty("active_energy") * 0.239006, 0),  # kJ → kcal
-
-    # Sömn (tar första posten)
-    "sleep_h": round(metrics.get("sleep_analysis", {}).get("data", [{}])[0].get("asleep", 0), 2),
-
-    # Vikt & vilopuls (kommer som egna metrics om du exporterar dem)
-    "weight":  _sum_qty("body_mass"),             # kg (eller 0)
-    "rest_hr": _sum_qty("resting_heart_rate"),    # bpm (eller 0)
-}
+    # Summera värden
+    summary = {
+        "date": datetime.utcnow().strftime("%Y-%m-%d"),
+        "kcal_in": _first_metric(metrics, "dietary_energy"),        # kcal
+        "protein": _first_metric(metrics, "protein"),               # g
+        "fat": _first_metric(metrics, "total_fat"),                 # g
+        "carbs": _first_metric(metrics, "carbohydrates"),           # g
+        "water": _first_metric(metrics, "water"),                   # ml
+        "steps": _first_metric(metrics, "step_count"),              # count
+        "active": round(_first_metric(metrics, "active_energy") * 0.239006, 0),  # kJ→kcal
+        "sleep_h": round(metrics.get("sleep_analysis", {}).get("data", [{}])[0].get("asleep", 0), 2),
+        "weight": _first_metric(metrics, "body_mass"),              # kg
+        "rest_hr": _first_metric(metrics, "resting_heart_rate"),    # bpm
+    }
 
     prompt = (
         f"📊 Hälsodata {summary['date']}\n"
