@@ -47,9 +47,9 @@ async def webhook(request: Request, auth: str = ""):
         "protein":   _first_metric(metrics, "protein"),
         "fat":       _first_metric(metrics, "total_fat"),
         "carbs":     _first_metric(metrics, "carbohydrates"),
-        "water":     _first_metric(metrics, "water"),
-        "weight":    _first_metric(metrics, "body_mass"),
-        "rest_hr":   _first_metric(metrics, "resting_heart_rate"),
+    #    "water":     _first_metric(metrics, "water"),
+        "weight":    _last_metric(metrics, "weight_body_mass"),
+    #    "rest_hr":   _first_metric(metrics, "resting_heart_rate"),
         "sleep_h": round(
             metrics.get("sleep_analysis", {}).get("data", [{}])[0].get("asleep", 0), 2
         ),
@@ -67,7 +67,6 @@ async def webhook(request: Request, auth: str = ""):
         f"📊 Hälsodata {summary['date']}\n"
         f"• Kalorier in: {summary['kcal_in']} kcal\n"
         f"• Makro (P/F/K): {summary['protein']}/{summary['fat']}/{summary['carbs']} g\n"
-        f"• Vatten: {summary['water']} ml\n"
         f"• Aktiv energi: {summary['active']} kcal • Steg: {summary['steps']}\n"
         f"• Sömn: {summary['sleep_h']} h • Vilopuls: {summary['rest_hr']} bpm\n"
         f"• Vikt: {summary['weight']} kg"
